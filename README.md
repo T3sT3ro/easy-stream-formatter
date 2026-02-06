@@ -1,5 +1,7 @@
 # Markdown-like formatter for terminal
 
+Repository extracted from previus https://github.com/T3sT3ro.github.io/ site with `git-filter-repo`
+
 > source: https://t3st3ro.github.io/packages/formatter/
 
 I like colors. I like markdown. I like mnemonics. But I hate writing cryptic `^[[1;31mSTUFF^[[0m` every time I want something to render in bold red in my terminal. So... I created a tool to do that translation for me!
