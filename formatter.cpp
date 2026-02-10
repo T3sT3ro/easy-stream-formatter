@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <regex>
 #include <sstream>
 #include <stack>
@@ -15,104 +16,102 @@ const char* USAGE  = R"-(
 Usage: %s [options] [strings...]
 )-";
 
-const char* HELP   = R"-(
+const char* HELP = R"-(
 Markdown-like Formatter by Tooster, @SVERSION
 Homepage: @HOMEPAGE
 
 Description:
-    Translate liquid-like tags '{<format>--' and '--}' to ANSI formattings.
-    When no arguments are passed it reads input from STDIN. Otherwise args
-    are translated. Remember to quote arguments if used in args.
+    Translates liquid-like tags '{<format>--' and '--}' into ANSI formatting.
+    When no arguments are passed, input is read from STDIN. Otherwise, each
+    argument is translated separately. Remember to quote arguments when they
+    contain spaces or special characters.
 
 Options:
-    -v --version            get version string (since v1.4)
+    -v --version            print version string (since v1.4)
     -l --legend             show formatting legend
-    -s --strip              strip off formatting sequences (tags)
-    -e --escape             escape sequences (\[\abrnftv])
-    -S --no-sanitize        don't insert format-reset on EOF
+    -s --strip              strip formatting tags from input
+    -e --escape             enable C-like escape sequences (\a\b\r\n\f\t\v)
+    -S --no-sanitize        do not insert format reset on EOF
        --demo               show demo
-    -h --help               displays this help
+    -h --help               display this help and exit
 
 Overview:
-    Formats use a stack but they don't have to balance. Formatting is greedy,
-    so whenever a tag is encountered it is translated to ANSI. This basically
-    means, that it's possible to have leftover formats in terminal if closing
-    tags were missing due to unexpected data end or simply unbalanced tags.
+    Formatting uses a stack, but tags do not have to be balanced. The formatter
+    is greedy: whenever a tag is encountered, it is immediately translated
+    into ANSI escapes. As a result, missing closing tags may leave formatting
+    active in the terminal.
 
-    Formatter follows 'best efford' ideology -- parses whatever it can and
-    never crashes. Unrecognized format is returned as string.
+    The formatter follows a "best-effort" approach: it parses whatever it can,
+    never crashes, and prints unrecognized or invalid formatting verbatim.
 
-    This program is meant to be used in pipes of programs that don't want to
-    depend on any fancy formatting libraries. It's meant to be simple to use
-    in existing codebase - you just have to edit strings printed by program
-    to include '{--' '--}' tags.
+    This tool is designed for use in pipelines and in programs that do not
+    want to depend on formatting libraries. Existing code only needs to
+    modify printed strings to include '{<format>--' and '--}' tags.
 
-    Strip option is useful when you have to preserve a file that you want to
-    display later with colors, but also need to get rid of all formatting
-    characters. For now tags are hardcoded, which poses danger to files that
-    have {-- and --} as content. In the future there will be an option to
-    provide custom tags
+    Strip mode is useful when you want formatted output in the terminal while
+    preserving unformatted text in files. Note that tags are currently
+    hardcoded, which may conflict with inputs containing literal '{--' or
+    '--}'. Future versions may allow custom tag definitions.
 
 Formatting and examples:
-    TL;DR legend of formats and how it works is available under '-l' option.
+    A compact legend describing all formats and rules is available via '-l'.
 
-    (Below 'f' is used as an alias for 'formatter')
+    (Below, 'f' is used as an alias for 'formatter'.)
 
-    To select foreground use single color letter. Use capitalized letter for
-    bright* version:
+    To set the foreground color, use a single color letter. Use uppercase for
+    the bright variant:
      $ f "{r--red--} {R--BRIGHT RED--}"
 
-    First letter sets the foreground, second sets the background:
+    The first color sets the foreground, the second sets the background:
      $ f "{RB*--BRIGHT RED on BRIGHT BLUE and bold--}"
-    They don't have to next to each other:
-     $ f "{R*_B--works as well--}"
+    They do not have to be adjacent:
+     $ f "{R*_B--this also works--}"
 
-    To set background color alone use [;] (current top color) as foreground:
+    To set only the background color, use ';' (current color) as foreground:
      $ f "{r--red text {;y--on yellow--} and more red--}"
 
-    While [;] current is a meta-color refering to the last one on the stack,
-    the [d] deafult color referes to terminal's default color, which often is
-    different than white color (sometimes equals BRIGHT WHITE [W] color).
+    The ';' (current) color refers to the topmost color on the stack.
+    The 'd' (default) color refers to the terminal's default color, which may
+    differ from white and sometimes equals BRIGHT WHITE ('W').
 
-    Formatting options work a little bit differently than colors. They are
-    xored against current formatting and toggle it. You can thing about it
-    like that: odd-numbered formats on stack are active, even numbred are not:
-     $ f "{/*--bold, italic {*--bold toggled off--} bold, italic again--}"
+    Formatting options behave differently than colors. They are XOR-ed against
+    the current state and therefore toggle on repeated use. Conceptually,
+    odd occurrences enable a style, even occurrences disable it:
+     $ f "{/*--bold, italic {*--bold toggled off--} bold and italic again--}"
 
-    The [#] trim all paddings option removes all leading and trailing
-    whitespaces inside the matched balanced pairs:
-     $ f "{#--   <no paddings before {r--red--} and no paddings after>    --}"
+    The '#' (trim) option removes leading and trailing whitespace inside the
+    matched balanced pair:
+     $ f "{#--   <no padding before {r--red--} and none after>    --}"
 
-Remars:
-    - Some terminals may lack suport for bright colors (ANSI codes >= 90).
-    - Be wary about using non-standard formattings, such as blink, overline,
-      double underline and strikethrough.
-    - Remember that programs in pipes have system-default buffering, which
-      can cause interactive process seem to "freeze" when piped to formatter.
-      You can use 'stdbuf' or 'unbuffer' commands to prevent that behavior.
-    - The main use case for this program was for pipes and printf-debugging,
-      but optional syntax with string arguments was added for convenience.
-      Just remember to quote arguments with whitespaces.
+Remarks:
+    - Some terminals may not support bright colors (ANSI codes >= 90).
+    - Use non-standard styles (blink, overline, double underline,
+      strikethrough) with care; terminal support varies.
+    - Programs in pipelines use system-default buffering, which may cause
+      interactive output to appear frozen. Tools like 'stdbuf' or 'unbuffer'
+      can help.
+    - The primary use case is piping and printf-style debugging; argument-based
+      usage exists for convenience. Always quote arguments containing spaces.
 )-";
 
 const char* LEGEND = R"-(
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ ┏━[ANSI format]━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┃
-┃ ┃  '{format--text--}' e.g. {%Yc*_--foo--}  ┃ ┃
+┃ ┃  {<format>--text--}  e.g. {%Yc*_--foo--} ┃ ┃
 ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
 ┃ ┏━[Colors]━━━━━┳━[Options]━━━━━━━━━━━━━━━━━┓ ┃
-┃ ┃              ┃  [c]olor (CAPS == BRIGHT) ┃1┃
-┃ ┃  blac[k]     ┃  [%] Reversed             ┃ ┃
-┃ ┃  [r]ed       ┃  [!] Blink                ┃2┃
-┃ ┃  [g]reen     ┃  [*] Bold                 ┃ ┃
-┃ ┃  [y]ellow    ┃  [/] Italic               ┃ ┃
-┃ ┃  [b]lue      ┃  [_] Underline            ┃ ┃
-┃ ┃  [m]agenta   ┃  [^] Overline             ┃2┃
-┃ ┃  [c]yan      ┃  [=] Double underline     ┃2┃
-┃ ┃  [w]hite     ┃  [~] Strikethrough        ┃2┃
-┃ ┃  [;] current ┃  [.] Dim                  ┃ ┃
-┃ ┃  [d] default ┃  [#] Trim text paddings   ┃ ┃
-┃ ┃              ┃  [0] Reset all formatting ┃ ┃
+┃ ┃  blac[k]     ┃  [Color]{0,2}             ┃1┃
+┃ ┃  [r]ed       ┃  [%] Reversed             ┃ ┃
+┃ ┃  [g]reen     ┃  [!] Blink                ┃2┃
+┃ ┃  [y]ellow    ┃  [*] Bold                 ┃ ┃
+┃ ┃  [b]lue      ┃  [/] Italic               ┃ ┃
+┃ ┃  [m]agenta   ┃  [_] Underline            ┃ ┃
+┃ ┃  [c]yan      ┃  [^] Overline             ┃2┃
+┃ ┃  [w]hite     ┃  [=] Double underline     ┃2┃
+┃ ┃  [;] current ┃  [~] Strikethrough        ┃2┃
+┃ ┃  [d] default ┃  [.] Dim                  ┃ ┃
+┃ ┃              ┃  [#] Trim text paddings   ┃ ┃
+┃ ┃  CAPS=BRIGHT ┃  [0] Reset all formatting ┃ ┃
 ┃ ┗━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
 ┃ ┏━[Control]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┃
 ┃1┃  1st encountered color is fg, 2nd is bg  ┃ ┃
@@ -120,7 +119,6 @@ const char* LEGEND = R"-(
 ┃1┃  Capitalize fg/bg for brighter colors    ┃ ┃
 ┃1┃  Default color [d] is terminal's default ┃ ┃
 ┃ ┃  Options are toggled (XORed) with last   ┃ ┃
-┃ ┃  Empty options '{--' == [0] reset format ┃ ┃
 ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
 ┃ ┏━[Remarks]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┃
 ┃ ┃  Formats are stored on a stack           ┃ ┃
@@ -130,7 +128,6 @@ const char* LEGEND = R"-(
 ┃2┃  Terminals may lack support for some ops ┃ ┃
 ┃ ┃  Buffering may break interactiveness     ┃ ┃
 ┃ ┃   - `stdbuf -i0 -o0 formatter` may help  ┃ ┃
-┃ ┃  Visit https://bit.ly/2QuLgNo for README ┃ ┃
 ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 )-";
