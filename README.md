@@ -27,8 +27,13 @@ Download a binary from releases and put it in your `PATH` (aliasing it to `f` is
 
 To build from source you need a C++ compiler and `make`:
 
-1. Extract `formatter-*.tar.gz` and `cd` into the directory
-2. Run `make install clean` (will install to `/usr/local/bin`)
+```bash
+git clone https://github.com/T3sT3ro/easy-stream-formatter.git
+cd easy-stream-formatter
+make install clean
+```
+
+This installs to `/usr/local/bin`.
 
 You can then run:
 
