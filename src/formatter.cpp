@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <getopt.h>
+#include <memory>
 #include <stack>
 #include <string>
 #include <string_view>
@@ -47,16 +48,11 @@ namespace ansi {
 
 // Tag syntax constants
 namespace syntax {
-    constexpr char             TAG_OPEN      = '{';
-    constexpr char             TAG_CLOSE     = '}';
-    constexpr char             DELIM_CHAR    = '-';
-    constexpr std::string_view DELIM_START   = "--";  // after format spec
-    constexpr std::string_view DELIM_END     = "--}"; // closing tag
-    constexpr char             ESCAPE_CHAR   = '\\';
-    constexpr char             TRIM_ESCAPE   = '#';
-    constexpr char             COLOR_CURRENT = ';';
-    constexpr char             COLOR_DEFAULT = 'd';
-    constexpr char             RESET_CHAR    = '0';
+    constexpr char ESCAPE_CHAR   = '\\';
+    constexpr char TRIM_ESCAPE   = '#';
+    constexpr char COLOR_CURRENT = ';';
+    constexpr char COLOR_DEFAULT = 'd';
+    constexpr char RESET_CHAR    = '0';
 
     // Style characters and their bit positions
     namespace style {
@@ -99,6 +95,125 @@ enum Color : uint8_t {
 // Format specifier character mappings
 constexpr std::string_view COLOR_CHARS_LOWER = "krgybmcw"; // 0-7
 constexpr std::string_view COLOR_CHARS_UPPER = "KRGYBMCW"; // bright variants
+
+// ============================================================================
+// Sequence Matcher - DFA for matching character sequences
+// ============================================================================
+
+// Matches a pattern character-by-character, tracking partial matches
+class SequenceMatcher {
+    std::string pattern_;
+    size_t pos_ = 0;
+
+public:
+    explicit SequenceMatcher(std::string_view pattern) : pattern_(pattern) {}
+
+    // Reset to initial state
+    void reset() { pos_ = 0; }
+
+    // Current match position
+    size_t matched() const { return pos_; }
+
+    // Check if fully matched
+    bool complete() const { return pos_ == pattern_.size(); }
+
+    // Check if pattern is empty (always matches)
+    bool empty() const { return pattern_.empty(); }
+
+    // Get the pattern
+    std::string_view pattern() const { return pattern_; }
+
+    // Feed a character, returns true if it extends the match
+    bool feed(char c) {
+        if (pos_ < pattern_.size() && c == pattern_[pos_]) {
+            pos_++;
+            return true;
+        }
+        // Restart matching from beginning (handles overlapping patterns)
+        pos_ = (c == pattern_[0]) ? 1 : 0;
+        return pos_ > 0;
+    }
+
+    // Check if character could start or continue a match
+    bool could_match(char c) const {
+        return pos_ < pattern_.size() && c == pattern_[pos_];
+    }
+};
+
+// ============================================================================
+// Tag Syntax - configurable tag delimiters with pre-built matchers
+// ============================================================================
+
+struct TagSyntax {
+    std::string name;
+    std::string open_tag;     // Start of opening tag: "{", "[", "<", "@@", etc.
+    std::string open_end;     // End of opening tag: "--", "]", ">"
+    std::string close_tag;    // Closing tag: "--}", "[/]", "</>"
+
+    // Pre-built matchers for efficiency (mutable for use in const contexts)
+    mutable SequenceMatcher open_tag_matcher{""};
+    mutable SequenceMatcher open_end_matcher{""};
+    mutable SequenceMatcher close_tag_matcher{""};
+
+    TagSyntax() = default;
+
+    TagSyntax(std::string_view n, std::string_view ot, std::string_view oe, std::string_view ct)
+        : name(n), open_tag(ot), open_end(oe), close_tag(ct),
+          open_tag_matcher(ot), open_end_matcher(oe), close_tag_matcher(ct) {}
+
+    // Initialize matchers (call after construction or modification)
+    void init_matchers() const {
+        open_tag_matcher  = SequenceMatcher(open_tag);
+        open_end_matcher  = SequenceMatcher(open_end);
+        close_tag_matcher = SequenceMatcher(close_tag);
+    }
+
+    void reset_matchers() const {
+        open_tag_matcher.reset();
+        open_end_matcher.reset();
+        close_tag_matcher.reset();
+    }
+
+    // Predefined styles
+    static const TagSyntax CLASSIC;
+    static const TagSyntax BRACKET;
+    static const TagSyntax XML;
+
+    static const TagSyntax* ALL_STYLES[];
+    static constexpr size_t NUM_STYLES = 3;
+
+    // Find predefined style by name
+    static const TagSyntax* find(std::string_view name) {
+        for (size_t i = 0; i < NUM_STYLES; ++i) {
+            if (ALL_STYLES[i]->name == name) {
+                return ALL_STYLES[i];
+            }
+        }
+        return nullptr;
+    }
+
+    // Create from 3 separate arguments: opening, separator, closing
+    // All must be non-empty strings
+    static std::unique_ptr<TagSyntax> from_args(const char* opening, const char* separator, const char* closing) {
+        if (!opening || !separator || !closing) return nullptr;
+        if (std::strlen(opening) == 0 || std::strlen(separator) == 0 || std::strlen(closing) == 0) return nullptr;
+
+        auto syntax = std::make_unique<TagSyntax>();
+        syntax->name       = "custom";
+        syntax->open_tag   = opening;
+        syntax->open_end   = separator;
+        syntax->close_tag  = closing;
+        syntax->init_matchers();
+        return syntax;
+    }
+};
+
+// Static predefined styles
+const TagSyntax TagSyntax::CLASSIC{"classic", "{", "--", "--}"};
+const TagSyntax TagSyntax::BRACKET{"bracket", "[", "]",  "[/]"};
+const TagSyntax TagSyntax::XML    {"xml",     "<", ">",  "</>"};
+
+const TagSyntax* TagSyntax::ALL_STYLES[] = {&TagSyntax::CLASSIC, &TagSyntax::BRACKET, &TagSyntax::XML};
 
 // ============================================================================
 // Format representation using bitfields
@@ -221,11 +336,14 @@ class FormatterAutomaton {
     const bool strip_; // strip formatting instead of emitting ANSI
     const bool escape_; // enable escape sequences
     const bool sanitize_; // emit reset on destruction
+    const TagSyntax& syntax_; // tag syntax configuration
 
     enum class State {
         DEFAULT,
         PARSE_ESCAPE,
+        PARSE_OPENING_TAG,    // matching multi-char open_tag
         PARSE_OPENING_BRACKET,
+        PARSE_CLOSING_TAG, // for [/] or </> style close tags
         SKIP_WHITESPACE, // for \# escape
     };
 
@@ -394,7 +512,8 @@ class FormatterAutomaton {
     }
 
 public:
-    FormatterAutomaton(bool strip, bool escape, bool sanitize) : strip_(strip), escape_(escape), sanitize_(sanitize) {
+    FormatterAutomaton(bool strip, bool escape, bool sanitize, const TagSyntax& syntax = TagSyntax::CLASSIC)
+        : strip_(strip), escape_(escape), sanitize_(sanitize), syntax_(syntax) {
         format_stack_.push(Format::initial());
         emit_ansi(format_stack_.top().to_ansi());
     }
@@ -468,59 +587,178 @@ public:
             // Fall through to process this character
         }
 
-        // Start bracket parsing
-        if (c == syntax::TAG_OPEN) {
-            flush_buffer();
+        // Handle closing tag detection (for [/] or </> styles)
+        if (state_ == State::PARSE_CLOSING_TAG) {
             buffer_char(c);
-            bracket_format_ = Format::empty();
-            parsed_colors_  = 0;
-            parsed_styles_  = 0;
-            state_          = State::PARSE_OPENING_BRACKET;
-            return;
-        }
-
-        // Parse bracket format or terminator
-        if (c == syntax::DELIM_CHAR) {
-            buffer_char(c);
-            if (state_ == State::PARSE_OPENING_BRACKET && buffer_ends_with(syntax::DELIM_START)) {
-                // Successfully parsed opening bracket
-                emit_ansi(push_format(bracket_format_));
-                finish_bracket_parse(true);
-                return;
-            }
-            return;
-        }
-
-        // Parse format specifiers inside bracket
-        if (state_ == State::PARSE_OPENING_BRACKET) {
-            buffer_char(c);
-            if (try_parse_color(c) || try_parse_style(c)) {
-                return; // valid format char
-            }
-            // Invalid character in bracket
-            finish_bracket_parse(false);
-            return;
-        }
-
-        // Closing bracket
-        if (c == syntax::TAG_CLOSE) {
-            buffer_char(c);
-            if (buffer_ends_with(syntax::DELIM_END)) {
+            if (buffer_ends_with(syntax_.close_tag)) {
                 if (format_stack_.size() > 1) {
-                    buffer_remove_suffix(syntax::DELIM_END.size());
+                    buffer_remove_suffix(syntax_.close_tag.size());
                     flush_buffer();
                     emit_ansi(pop_format());
                     state_ = State::DEFAULT;
                     return;
                 }
             }
+            // Check if still potentially a close tag
+            if (syntax_.close_tag.substr(0, buffer_.size()) == std::string_view(buffer_)) {
+                return; // still matching prefix of close tag
+            }
+            // Not a close tag, flush and continue
             flush_buffer();
             state_ = State::DEFAULT;
             return;
         }
 
-        // Normal character
+        // Check for closing tag FIRST (--} or [/] or </> etc.)
+        // Must happen before open_tag check because close_tag may end with open_tag
+        {
+            // Tentatively add character to check close_tag
+            std::string tentative = buffer_ + static_cast<char>(c);
+            if (tentative.size() >= syntax_.close_tag.size() &&
+                tentative.substr(tentative.size() - syntax_.close_tag.size()) == syntax_.close_tag) {
+                if (format_stack_.size() > 1) {
+                    // Remove close_tag from output
+                    buffer_ = tentative.substr(0, tentative.size() - syntax_.close_tag.size());
+                    flush_buffer();
+                    emit_ansi(pop_format());
+                    state_ = State::DEFAULT;
+                    return;
+                }
+            }
+        }
+
+        // Check for potential opening tag start
+        if (state_ == State::DEFAULT) {
+            // Could this char start the open_tag?
+            if (c == syntax_.open_tag[0]) {
+                if (syntax_.open_tag.size() == 1) {
+                    // Single-char open_tag: directly enter bracket parsing
+                    flush_buffer();
+                    buffer_char(c);
+                    bracket_format_ = Format::empty();
+                    parsed_colors_  = 0;
+                    parsed_styles_  = 0;
+                    state_          = State::PARSE_OPENING_BRACKET;
+                    return;
+                } else {
+                    // Multi-char open_tag: enter partial match state
+                    flush_buffer();
+                    buffer_char(c);
+                    state_ = State::PARSE_OPENING_TAG;
+                    return;
+                }
+            }
+        }
+
+        // Continue matching multi-char opening tag
+        if (state_ == State::PARSE_OPENING_TAG) {
+            buffer_char(c);
+            
+            // Check if we've completed the open_tag
+            if (buffer_ == syntax_.open_tag) {
+                bracket_format_ = Format::empty();
+                parsed_colors_  = 0;
+                parsed_styles_  = 0;
+                state_          = State::PARSE_OPENING_BRACKET;
+                return;
+            }
+            
+            // Check if still a partial match (could still become open_tag)
+            if (syntax_.open_tag.substr(0, buffer_.size()) == buffer_) {
+                return; // still matching prefix of open_tag
+            }
+            
+            // No longer matches open_tag - flush buffer and continue in DEFAULT
+            flush_buffer();
+            state_ = State::DEFAULT;
+            return;
+        }
+
+        // Parse bracket format or terminator
+        if (state_ == State::PARSE_OPENING_BRACKET) {
+            buffer_char(c);
+
+            // Check if we've reached the end of the format specifier
+            // (must check BEFORE close tag, as classic style's open_end "--" 
+            // is a prefix of close_tag "--}")
+            if (buffer_ends_with(syntax_.open_end)) {
+                // Successfully parsed opening bracket
+                emit_ansi(push_format(bracket_format_));
+                finish_bracket_parse(true);
+                return;
+            }
+
+            // Check if this could be a close tag (e.g., [/] or </>)
+            // Only for styles where close tag starts with open_tag
+            if (syntax_.close_tag.size() >= syntax_.open_tag.size() &&
+                syntax_.close_tag.substr(0, syntax_.open_tag.size()) == syntax_.open_tag) {
+                // Check if we're at the beginning of a close tag
+                size_t close_prefix_len = std::min(buffer_.size(), syntax_.close_tag.size());
+                if (close_prefix_len >= syntax_.open_tag.size() + 1 &&
+                    buffer_.substr(buffer_.size() - close_prefix_len) == syntax_.close_tag.substr(0, close_prefix_len)) {
+                    // This looks like a close tag
+                    state_ = State::PARSE_CLOSING_TAG;
+                    if (buffer_ends_with(syntax_.close_tag)) {
+                        if (format_stack_.size() > 1) {
+                            buffer_remove_suffix(syntax_.close_tag.size());
+                            flush_buffer();
+                            emit_ansi(pop_format());
+                            state_ = State::DEFAULT;
+                            return;
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Check if current char could be start of open_end delimiter
+            // (allows partial match, e.g., first '-' of '--')
+            bool could_be_delimiter = false;
+            for (size_t i = 1; i <= syntax_.open_end.size() && i <= buffer_.size(); ++i) {
+                if (buffer_.substr(buffer_.size() - i) == syntax_.open_end.substr(0, i)) {
+                    could_be_delimiter = true;
+                    break;
+                }
+            }
+            if (could_be_delimiter) {
+                return; // wait for more chars to determine if delimiter
+            }
+
+            // Try to parse format characters
+            if (try_parse_color(c) || try_parse_style(c)) {
+                return; // valid format char
+            }
+
+            // Invalid character in bracket
+            finish_bracket_parse(false);
+            return;
+        }
+
+        // Check for closing tag (--} or [/] or </>)
         buffer_char(c);
+        if (buffer_ends_with(syntax_.close_tag)) {
+            if (format_stack_.size() > 1) {
+                buffer_remove_suffix(syntax_.close_tag.size());
+                flush_buffer();
+                emit_ansi(pop_format());
+                state_ = State::DEFAULT;
+                return;
+            }
+        }
+
+        // Check if buffer could be partial close tag (e.g., "-" or "--" for "--}")
+        bool could_be_close = false;
+        for (size_t i = 1; i <= syntax_.close_tag.size() && i <= buffer_.size(); ++i) {
+            if (buffer_.substr(buffer_.size() - i) == syntax_.close_tag.substr(0, i)) {
+                could_be_close = true;
+                break;
+            }
+        }
+        if (could_be_close) {
+            return; // wait for more chars to determine if close tag
+        }
+
+        // Normal character - flush
         flush_buffer();
         state_ = State::DEFAULT;
     }
@@ -533,6 +771,8 @@ public:
 static int f_strip       = 0;
 static int f_escape      = 0;
 static int f_no_sanitize = 0;
+static const TagSyntax* f_syntax = &TagSyntax::CLASSIC;
+static std::unique_ptr<TagSyntax> f_custom_syntax; // holds custom syntax if specified
 
 static struct option long_options[] = {
     {"help", no_argument, nullptr, 'h'},
@@ -541,6 +781,8 @@ static struct option long_options[] = {
     {"strip", no_argument, &f_strip, 's'},
     {"escape", no_argument, &f_escape, 'e'},
     {"no-sanitize", no_argument, &f_no_sanitize, 'S'},
+    {"syntax", required_argument, nullptr, 'x'},
+    {"custom", no_argument, nullptr, 'c'},
     {"demo", no_argument, nullptr, 0},
     {nullptr, 0, nullptr, 0},
 };
@@ -550,7 +792,7 @@ int main(int argc, char* argv[]) {
     int opt_idx;
     FILE* istream = stdin;
 
-    while ((opt = getopt_long(argc, argv, "?hvlseS", long_options, &opt_idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "?hvlseSx:c", long_options, &opt_idx)) != -1) {
         switch (opt) {
         case 0:
             if (std::strcmp(long_options[opt_idx].name, "demo") == 0) {
@@ -585,6 +827,31 @@ int main(int argc, char* argv[]) {
         case 'S':
             f_no_sanitize = 1;
             break;
+        case 'x':
+            f_syntax = TagSyntax::find(optarg);
+            if (!f_syntax) {
+                std::fprintf(stderr, "Unknown syntax: %s\n", optarg);
+                std::fprintf(stderr, "Available: classic, bracket, xml (or use -c for custom)\n");
+                return EXIT_FAILURE;
+            }
+            break;
+        case 'c':
+            // Custom syntax: consume next 3 arguments
+            if (optind + 2 >= argc) {
+                std::fprintf(stderr, "Custom syntax requires 3 arguments: OPEN SEP CLOSE\n");
+                std::fprintf(stderr, "Example: -c '(' ')' ')'\n");
+                return EXIT_FAILURE;
+            }
+            f_custom_syntax = TagSyntax::from_args(argv[optind], argv[optind + 1], argv[optind + 2]);
+            if (!f_custom_syntax) {
+                std::fprintf(stderr, "Invalid custom syntax: '%s' '%s' '%s'\n",
+                             argv[optind], argv[optind + 1], argv[optind + 2]);
+                std::fprintf(stderr, "All three arguments must be non-empty strings\n");
+                return EXIT_FAILURE;
+            }
+            optind += 3;
+            f_syntax = f_custom_syntax.get();
+            break;
         }
     }
 
@@ -593,7 +860,7 @@ int main(int argc, char* argv[]) {
         const char* separator = "";
         while (optind < argc) {
             std::printf("%s", separator);
-            FormatterAutomaton automaton(f_strip, f_escape, !f_no_sanitize);
+            FormatterAutomaton automaton(f_strip, f_escape, !f_no_sanitize, *f_syntax);
             for (const char* p = argv[optind]; *p; ++p) {
                 automaton.accept(*p);
             }
@@ -602,7 +869,7 @@ int main(int argc, char* argv[]) {
         }
     } else {
         // Read from stdin
-        FormatterAutomaton automaton(f_strip, f_escape, !f_no_sanitize);
+        FormatterAutomaton automaton(f_strip, f_escape, !f_no_sanitize, *f_syntax);
         int c;
         while ((c = std::getc(istream)) != EOF) {
             automaton.accept(c);

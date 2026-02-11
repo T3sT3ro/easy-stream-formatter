@@ -288,6 +288,114 @@ run_test "edge: literal dashes" \
 
 # =============================================================================
 echo
+echo "--- Syntax Style Tests (--syntax) ---"
+# =============================================================================
+
+# Bracket syntax [r*]text[/]
+run_test "syntax: bracket simple" \
+    "[r]red[/]" \
+    "red" \
+    -s --syntax=bracket
+
+run_test "syntax: bracket with styles" \
+    "[*r]bold red[/]" \
+    "bold red" \
+    -s --syntax=bracket
+
+run_test "syntax: bracket nested" \
+    "[r]red [b]blue[/] red[/]" \
+    "red blue red" \
+    -s --syntax=bracket
+
+run_test "syntax: bracket empty format" \
+    "[]text[/]" \
+    "text" \
+    -s --syntax=bracket
+
+run_test "syntax: bracket unmatched" \
+    "[r]unclosed" \
+    "unclosed" \
+    -s --syntax=bracket
+
+# XML syntax <r*>text</>
+run_test "syntax: xml simple" \
+    "<r>red</>" \
+    "red" \
+    -s --syntax=xml
+
+run_test "syntax: xml with styles" \
+    "<*r>bold red</>" \
+    "bold red" \
+    -s --syntax=xml
+
+run_test "syntax: xml nested" \
+    "<r>red <b>blue</> red</>" \
+    "red blue red" \
+    -s --syntax=xml
+
+run_test "syntax: xml empty format" \
+    "<>text</>" \
+    "text" \
+    -s --syntax=xml
+
+run_test "syntax: xml unmatched" \
+    "<r>unclosed" \
+    "unclosed" \
+    -s --syntax=xml
+
+# Classic syntax (explicit) {r*--text--}
+run_test "syntax: classic explicit" \
+    "{r--red--}" \
+    "red" \
+    -s --syntax=classic
+
+# Invalid syntax name
+run_test "syntax: invalid name fails" \
+    "test" \
+    "Unknown syntax: invalid
+Available: classic, bracket, xml (or use -c for custom)" \
+    --syntax=invalid 2>&1 || true
+
+# Custom syntax tests (-c OPEN SEP CLOSE)
+run_test "syntax: custom parentheses" \
+    "(*r)bold red)" \
+    "bold red" \
+    -s -c '(' ')' ')'
+
+run_test "syntax: custom curly-pipes" \
+    "{*r|bold red|}" \
+    "bold red" \
+    -s -c '{' '|' '|}'
+
+run_test "syntax: custom classic-like" \
+    "{*r--bold red--}" \
+    "bold red" \
+    -s -c '{' '--' '--}'
+
+run_test "syntax: custom missing args fails" \
+    "test" \
+    "Custom syntax requires 3 arguments: OPEN SEP CLOSE
+Example: -c '(' ')' ')'" \
+    -c '(' ')' 2>&1 || true
+
+run_test "syntax: custom empty string fails" \
+    "test" \
+    "Invalid custom syntax: '' ')' ')'
+All three arguments must be non-empty strings" \
+    -c '' ')' ')' 2>&1 || true
+
+run_test "syntax: custom multi-char open" \
+    "((*r))bold red))" \
+    "bold red" \
+    -s -c '((' '))' '))'
+
+run_test "syntax: custom multi-char all" \
+    "@@*g##green text@@" \
+    "green text" \
+    -s -c '@@' '##' '@@'
+
+# =============================================================================
+echo
 echo "========================================"
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"
 echo "========================================"

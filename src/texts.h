@@ -26,8 +26,34 @@ Options:
     -s --strip              strip formatting tags from input
     -e --escape             enable C-like escape sequences (\a\b\r\n\f\t\v\#)
     -S --no-sanitize        do not insert format reset on EOF
+    -x --syntax=STYLE       use alternative tag syntax (see below)
+    -c --custom OPEN SEP CLOSE   define custom tag syntax (see below)
        --demo               show demo
     -h --help               display this help and exit
+
+Syntax styles (--syntax):
+    classic (default)   {r*--text--}    Opening: {<fmt>--  Closing: --}
+    bracket             [r*]text[/]     Opening: [<fmt>]   Closing: [/]
+    xml                 <r*>text</>     Opening: <<fmt>>   Closing: </>
+
+    The bracket and xml styles provide more familiar syntax for users coming
+    from other markup languages. The xml style is similar to HTML/XML tags.
+
+Custom syntax (-c):
+    Define your own tag syntax with 3 arguments: OPEN SEP CLOSE
+    
+    OPEN   - string that starts an opening tag (e.g., '{', '[[', '@@')
+    SEP    - string that ends the opening tag (after format specifiers)
+    CLOSE  - full closing tag string
+
+    Examples:
+        -c '{' '--' '--}'     equivalent to 'classic' style
+        -c '[' ']' '[/]'      equivalent to 'bracket' style
+        -c '<' '>' '</>'      equivalent to 'xml' style
+        -c '(' ')' ')'        parentheses style: (*r)text)
+        -c '{' '|' '|}'       pipe-delimited: {*r|text|}
+        -c '@@' '##' '@@'     custom markers: @@*r##text@@
+        -c '[[' ']]' '[[/]]'  double brackets: [[*r]]text[[/]]
 
 Overview:
     Formatting uses a stack, but tags do not have to be balanced. The formatter

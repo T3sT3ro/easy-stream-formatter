@@ -88,7 +88,51 @@ formatter -e "{r--1--}\t{y--2--}\n"
 
 # Disable EOF sanitization
 formatter -S "{r--unclosed red" > file.txt
+
+# Alternative syntax styles
+formatter --syntax=bracket "[*r]bold red[/]"
+formatter --syntax=xml "<*r>bold red</>"
+
+# Custom syntax with 3 arguments
+formatter -c '(' ')' ')' '(*r)hello)'
 ```
+
+### Syntax styles
+
+Three tag syntax styles are available via `--syntax=STYLE`:
+
+| Style   | Opening tag | Closing tag | Example                     |
+| ------- | ----------- | ----------- | --------------------------- |
+| classic | `{fmt--`    | `--}`       | `{*r--bold red--}`          |
+| bracket | `[fmt]`     | `[/]`       | `[*r]bold red[/]`           |
+| xml     | `<fmt>`     | `</>`       | `<*r>bold red</>`           |
+
+The `bracket` and `xml` styles provide more familiar syntax for users coming from other markup languages.
+
+### Custom syntax
+
+Define your own tag syntax with `-c OPEN SEP CLOSE`:
+
+```bash
+# Parentheses style: (*r)bold red)
+formatter -c '(' ')' ')' '(*r)hello)'
+
+# Pipe-delimited: {*r|text|}
+formatter -c '{' '|' '|}' '{*r|hello|}'
+
+# Angle brackets with slashes: /*r/text/*
+formatter -c '/' '/' '//' '/*r/hello//'
+
+# Multi-character markers: @@*r##text@@
+formatter -c '@@' '##' '@@' '@@*r##hello@@'
+
+# Double brackets: [[*r]]text[[/]]
+formatter -c '[[' ']]' '[[/]]' '[[*r]]hello[[/]]'
+```
+
+- `OPEN` — string that starts an opening tag (e.g., `{`, `[[`, `@@`)
+- `SEP` — string that ends the opening tag (after format specifiers)
+- `CLOSE` — full closing tag string
 
 ### Strip mode
 
@@ -195,10 +239,8 @@ Style resolution (XOR-based):
 
 ## TODO
 
-* Custom tag delimiters
 * Decouple parser from character set
 * AWK-based v2 for comparison
-* Alternative syntax variants
 
 ## Known issues
 
