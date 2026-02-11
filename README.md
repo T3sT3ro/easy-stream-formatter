@@ -23,9 +23,22 @@ Formatting state is stored as a stack of bitmask toggles, allowing easy nesting 
 
 ## Installation
 
-Download a binary from releases and put it in your `PATH` (aliasing it to `f` is recommended), or build from source.
+### Pre-built binary (recommended)
 
-To build from source you need a C++ compiler and `make`:
+Download the latest binary for your platform from [Releases](https://github.com/T3sT3ro/easy-stream-formatter/releases):
+
+```bash
+# Download (replace VERSION and PLATFORM as needed)
+curl -LO https://github.com/T3sT3ro/easy-stream-formatter/releases/download/vVERSION/formatter-VERSION-linux-x86_64
+
+# Make executable and move to PATH
+chmod +x formatter-*
+sudo mv formatter-* /usr/local/bin/formatter
+```
+
+### Build from source
+
+Requires a C++ compiler with C++20 support and `make`:
 
 ```bash
 git clone https://github.com/T3sT3ro/easy-stream-formatter.git
@@ -33,7 +46,7 @@ cd easy-stream-formatter
 make install clean
 ```
 
-This installs to `/usr/local/bin`.
+This installs to `/usr/local/bin`. Aliasing to `f` is recommended for convenience.
 
 You can then run:
 

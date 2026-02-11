@@ -1,17 +1,22 @@
 CPP = formatter.cpp
-TARFILES = $(CPP) Makefile README.md
+TARFILES = $(CPP) Makefile README.md .gitignore
 HOMEPAGE = https://github.com/T3sT3ro/easy-stream-formatter
 
 # Version from git tags (fallback to 0.0.0 if no tags)
 VER_CURRENT = $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
 VER_STR = v$(VER_CURRENT)
 
-.PHONY: build install clean distclean dist bump-patch bump-minor bump-major publish
+# Platform detection
+OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+ARCH := $(shell uname -m)
+BINARY_NAME = formatter-$(VER_CURRENT)-$(OS)-$(ARCH)
+
+.PHONY: build install clean distclean dist release bump-patch bump-minor bump-major
 
 build: $(CPP)
 	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/' $(CPP) | \
 	sed 's#@HOMEPAGE#$(HOMEPAGE)#' | \
-	g++ -xc++ -std=c++20 -O3 -o formatter -
+	g++ -xc++ -std=c++20 -O3 -static-libgcc -static-libstdc++ -o formatter -
 
 install: build
 	sudo cp -u formatter /usr/local/bin/
@@ -22,9 +27,13 @@ clean:
 distclean: clean
 	rm -rf dist/
 
-dist: $(TARFILES)
+dist: build $(TARFILES)
 	@mkdir -p dist
-	tar -czf dist/formatter-$(VER_CURRENT).tar.gz --transform 's,^,formatter-$(VER_CURRENT)/,' $(TARFILES)
+	cp formatter dist/$(BINARY_NAME)
+	tar -czf dist/formatter-$(VER_CURRENT)-src.tar.gz --transform 's,^,formatter-$(VER_CURRENT)/,' $(TARFILES)
+	@echo "Created:"
+	@echo "  dist/$(BINARY_NAME)           (binary)"
+	@echo "  dist/formatter-$(VER_CURRENT)-src.tar.gz  (source)"
 
 # Version bumping via git tags
 bump-patch:
@@ -42,6 +51,7 @@ bump-major:
 	git tag -a "v$$NEXT" -m "Release v$$NEXT" && \
 	echo "Tagged: $(VER_STR) -> v$$NEXT"
 
-publish: build dist
-	@echo "Built and packaged $(VER_STR) -> dist/formatter-$(VER_CURRENT).tar.gz"
-	@echo "Push tag with: git push origin $(VER_STR)"
+release: dist
+	@echo ""
+	@echo "Release $(VER_STR) ready. Upload dist/* to GitHub Releases."
+	@echo "Push tag: git push origin $(VER_STR)"
