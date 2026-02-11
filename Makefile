@@ -1,5 +1,7 @@
-CPP = formatter.cpp
-TARFILES = $(CPP) Makefile README.md .gitignore tests/
+SRCDIR = src
+CPP = $(SRCDIR)/formatter.cpp
+HDR = $(SRCDIR)/texts.h
+TARFILES = $(SRCDIR)/ Makefile README.md .gitignore tests/
 HOMEPAGE = https://github.com/T3sT3ro/easy-stream-formatter
 
 # Version from git tags (fallback to 0.0.0 if no tags)
@@ -13,16 +15,17 @@ BINARY_NAME = formatter-$(VER_CURRENT)-$(OS)-$(ARCH)
 
 .PHONY: build install clean distclean dist release bump-patch bump-minor bump-major test
 
-build: $(CPP)
-	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/' $(CPP) | \
-	sed 's#@HOMEPAGE#$(HOMEPAGE)#' | \
+build: $(CPP) $(HDR)
+	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/; s#@HOMEPAGE#$(HOMEPAGE)#' $(HDR) > .texts.h.tmp
+	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/; s#@HOMEPAGE#$(HOMEPAGE)#; s|#include "texts.h"|#include ".texts.h.tmp"|' $(CPP) | \
 	g++ -xc++ -std=c++20 -O3 -static-libgcc -static-libstdc++ -o formatter -
+	rm -f .texts.h.tmp
 
 install: build
 	sudo cp -u formatter /usr/local/bin/
 
 clean:
-	rm -rf formatter
+	rm -rf formatter .texts.h.tmp
 
 distclean: clean
 	rm -rf dist/

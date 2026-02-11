@@ -2,3 +2,4 @@
 formatter
 dist/
 *.tar.gz
+.texts.h.tmp
