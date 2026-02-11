@@ -8,15 +8,16 @@ Formatting state is stored as a stack of bitmask toggles, allowing easy nesting 
 
 * Much more readable than raw ANSI escapes
   (`^[[1;31mSTUFF^[[0m` vs `{*r--STUFF--}`)
-* Markdown-like, mnemonic syntax
+* Markdown-like, mnemonic format specifiers
 * Works well for `printf` debugging and shell scripts
 * Can be used directly from the command line (no recompilation needed)
-* Stack-based formatting state with `{<style>--` … `--}`
+* Stack-based formatting state with automatic nesting
 * Automatic sanitization at EOF (disable with `--no-sanitize`)
 * XOR-based style toggles (repeat a style to disable it)
 * Stream editor — safe for pipelines and interactive input
 * C-like escape sequences with `-e` (including `\#` for whitespace trimming)
 * Strip mode (`-s`) to remove formatting while preserving raw text
+* **Multiple syntax styles** — classic, BBCode-like brackets, XML-like tags or define your own tag syntax with any strings
 
 ![demo](https://i.imgur.com/mc4RorK.png)
 
@@ -93,46 +94,10 @@ formatter -S "{r--unclosed red" > file.txt
 formatter --syntax=bracket "[*r]bold red[/]"
 formatter --syntax=xml "<*r>bold red</>"
 
-# Custom syntax with 3 arguments
-formatter -c '(' ')' ')' '(*r)hello)'
-```
-
-### Syntax styles
-
-Three tag syntax styles are available via `--syntax=STYLE`:
-
-| Style   | Opening tag | Closing tag | Example                     |
-| ------- | ----------- | ----------- | --------------------------- |
-| classic | `{fmt--`    | `--}`       | `{*r--bold red--}`          |
-| bracket | `[fmt]`     | `[/]`       | `[*r]bold red[/]`           |
-| xml     | `<fmt>`     | `</>`       | `<*r>bold red</>`           |
-
-The `bracket` and `xml` styles provide more familiar syntax for users coming from other markup languages.
-
-### Custom syntax
-
-Define your own tag syntax with `-c OPEN SEP CLOSE`:
-
-```bash
-# Parentheses style: (*r)bold red)
-formatter -c '(' ')' ')' '(*r)hello)'
-
-# Pipe-delimited: {*r|text|}
-formatter -c '{' '|' '|}' '{*r|hello|}'
-
-# Angle brackets with slashes: /*r/text/*
-formatter -c '/' '/' '//' '/*r/hello//'
-
-# Multi-character markers: @@*r##text@@
+# Fully custom syntax
 formatter -c '@@' '##' '@@' '@@*r##hello@@'
-
-# Double brackets: [[*r]]text[[/]]
-formatter -c '[[' ']]' '[[/]]' '[[*r]]hello[[/]]'
 ```
 
-- `OPEN` — string that starts an opening tag (e.g., `{`, `[[`, `@@`)
-- `SEP` — string that ends the opening tag (after format specifiers)
-- `CLOSE` — full closing tag string
 
 ### Strip mode
 
@@ -194,6 +159,38 @@ Supported styles and colors are listed via:
 
 (Terminals may not support all ANSI features.)
 
+## Syntax Styles
+
+Choose a tag style that fits your workflow — or define your own!
+
+### Built-in styles (`--syntax=STYLE`)
+
+| Style   | Opening tag | Closing tag | Example            | Similar to    |
+|---------|-------------|-------------|--------------------|---------------|
+| classic | `{fmt--`    | `--}`       | `{*r--bold red--}` | Liquid/Jekyll |
+| bracket | `[fmt]`     | `[/]`       | `[*r]bold red[/]`  | BBCode        |
+| xml     | `<fmt>`     | `</>`       | `<*r>bold red</>`  | HTML/XML      |
+
+
+```bash
+# BBCode-style
+formatter --syntax=bracket "[*r]error:[/] [y]warning message[/]"
+
+# XML-style
+formatter --syntax=xml "<*g>success</> <r>failure</>"
+
+# Simple single-character delimiters
+formatter -c '(' ')' ')'   '(*r)hello)'           # parentheses
+formatter -c '{' '|' '|}'  '{*r|hello|}'          # pipe-delimited
+formatter -c '/' '/' '//'  '/*r/hello//'          # slashes
+
+# Multi-character delimiters for unique syntax
+formatter -c '@@' '##' '@@'     '@@*r##red text@@'      # markers
+formatter -c '[[' ']]' '[[/]]'  '[[*r]]bold[[/]]'       # wiki-style
+formatter -c '{{' '}}' '{{/}}'  '{{*b}}blue{{/}}'       # mustache-like
+formatter -c '<%' '%>' '<%/%>'  '<%*g%>green<%/%>'      # template-style
+```
+
 ## How it works
 
 1. Input is processed greedily using a simple state machine
@@ -222,7 +219,7 @@ The formatter never errors out—it either applies formatting or prints the inpu
 Style resolution (XOR-based):
 
 | Tag      | Stack state      | Resulting style             |
-| -------- | ---------------- | --------------------------- |
+|----------|------------------|-----------------------------|
 | `{r*--`  | `[r,*]`          | red, bold                   |
 | `{~;g--` | `[r,*][~,;g]`    | red on green, bold, striked |
 | `{~--`   | `[r,*][~,;g][~]` | strike disabled             |

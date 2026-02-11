@@ -1,6 +1,6 @@
 SRCDIR = src
 CPP = $(SRCDIR)/formatter.cpp
-HDR = $(SRCDIR)/texts.h
+HDRS = $(wildcard $(SRCDIR)/*.h)
 TARFILES = $(SRCDIR)/ Makefile README.md .gitignore tests/
 HOMEPAGE = https://github.com/T3sT3ro/easy-stream-formatter
 
@@ -15,10 +15,10 @@ BINARY_NAME = formatter-$(VER_CURRENT)-$(OS)-$(ARCH)
 
 .PHONY: build install clean distclean dist release bump-patch bump-minor bump-major test
 
-build: $(CPP) $(HDR)
-	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/; s#@HOMEPAGE#$(HOMEPAGE)#' $(HDR) > .texts.h.tmp
+build: $(CPP) $(HDRS)
+	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/; s#@HOMEPAGE#$(HOMEPAGE)#' $(SRCDIR)/texts.h > .texts.h.tmp
 	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/; s#@HOMEPAGE#$(HOMEPAGE)#; s|#include "texts.h"|#include ".texts.h.tmp"|' $(CPP) | \
-	g++ -xc++ -std=c++20 -O3 -static-libgcc -static-libstdc++ -o formatter -
+	g++ -xc++ -std=c++20 -O3 -static-libgcc -static-libstdc++ -I$(SRCDIR) -o formatter -
 	rm -f .texts.h.tmp
 
 install: build
