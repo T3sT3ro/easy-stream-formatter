@@ -1,5 +1,5 @@
 CPP = formatter.cpp
-TARFILES = $(CPP) Makefile README.md .gitignore
+TARFILES = $(CPP) Makefile README.md .gitignore tests/
 HOMEPAGE = https://github.com/T3sT3ro/easy-stream-formatter
 
 # Version from git tags (fallback to 0.0.0 if no tags)
@@ -11,7 +11,7 @@ OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 ARCH := $(shell uname -m)
 BINARY_NAME = formatter-$(VER_CURRENT)-$(OS)-$(ARCH)
 
-.PHONY: build install clean distclean dist release bump-patch bump-minor bump-major
+.PHONY: build install clean distclean dist release bump-patch bump-minor bump-major test
 
 build: $(CPP)
 	sed 's/@SVERSION/$(VER_STR)/; s/@VER/$(VER_CURRENT)/' $(CPP) | \
@@ -55,3 +55,7 @@ release: dist
 	@echo ""
 	@echo "Release $(VER_STR) ready. Upload dist/* to GitHub Releases."
 	@echo "Push tag: git push origin $(VER_STR)"
+
+test: build
+	@chmod +x tests/run_tests.sh
+	@cd tests && ./run_tests.sh ../formatter

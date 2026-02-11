@@ -15,8 +15,7 @@ Formatting state is stored as a stack of bitmask toggles, allowing easy nesting 
 * Automatic sanitization at EOF (disable with `--no-sanitize`)
 * XOR-based style toggles (repeat a style to disable it)
 * Stream editor — safe for pipelines and interactive input
-* Optional trimming of leading/trailing whitespace
-* C-like escape sequences with `-e`
+* C-like escape sequences with `-e` (including `\#` for whitespace trimming)
 * Strip mode (`-s`) to remove formatting while preserving raw text
 
 ![demo](https://i.imgur.com/mc4RorK.png)
@@ -78,8 +77,8 @@ formatter "
 {r--red FG only {;b--blue BG--} red FG only--}
 "
 
-# Trim padding
-formatter "{#--    trimmed text    --}"
+# Trim whitespace (requires -e)
+formatter -e "hello\#     world"  # outputs: helloworld
 
 # Strip formatting
 formatter -s "{*g--formatted text--}"
@@ -111,7 +110,7 @@ Supported styles and colors are listed via:
     $ formatter -l
     ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
     ┃ ┏━[ANSI format]━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┃
-    ┃ ┃ '{<format>--text--}' e.g. {%Yc*_--foo--} ┃ ┃
+    ┃ ┃  {<format>--text--}  e.g. {%Yc*_--foo--} ┃ ┃
     ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
     ┃ ┏━[Colors]━━━━━┳━[Options]━━━━━━━━━━━━━━━━━┓ ┃
     ┃ ┃  blac[k]     ┃  [Color]{0,2}             ┃1┃
@@ -124,9 +123,13 @@ Supported styles and colors are listed via:
     ┃ ┃  [w]hite     ┃  [=] Double underline     ┃2┃
     ┃ ┃  [;] current ┃  [~] Strikethrough        ┃2┃
     ┃ ┃  [d] default ┃  [.] Dim                  ┃ ┃
-    ┃ ┃              ┃  [#] Trim text paddings   ┃ ┃
-    ┃ ┃  CAPS=BRIGHT ┃  [0] Reset all formatting ┃ ┃
+    ┃ ┃              ┃  [0] Reset all formatting ┃ ┃
+    ┃ ┃  CAPS=BRIGHT ┃                           ┃ ┃
     ┃ ┗━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
+    ┃ ┏━[Escapes (-e mode)]━━━━━━━━━━━━━━━━━━━━━━┓ ┃
+    ┃ ┃  \# Trim following whitespace (greedy)   ┃ ┃
+    ┃ ┃  \\ \a \b \r \n \f \t \v (C escapes)     ┃ ┃
+    ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
     ┃ ┏━[Control]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┃
     ┃1┃  1st encountered color is fg, 2nd is bg  ┃ ┃
     ┃1┃  Current color [;] is top color on stack ┃ ┃
@@ -185,7 +188,8 @@ Style resolution (XOR-based):
 ## Notes
 
 * Styles propagate through the stack until toggled off
-* RESET (`0`) and TRIM (`#`) do not propagate
+* RESET (`0`) clears all formatting (doesn't propagate)
+* Whitespace trimming (`\#`) requires `-e` flag and works as a greedy escape
 * As a stream editor, the formatter does not wait for balanced brackets
 * Buffering can affect interactivity (`stdbuf -i0 -o0 formatter` may help)
 
@@ -193,7 +197,6 @@ Style resolution (XOR-based):
 
 * Custom tag delimiters
 * Decouple parser from character set
-* Improve trim behavior
 * AWK-based v2 for comparison
 * Alternative syntax variants
 
